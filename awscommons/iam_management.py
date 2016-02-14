@@ -12,7 +12,6 @@ class IamPublish:
         self.policy_json = None
         self.policy_arn = None
         self.role_json = None
-        self.role_arn = None
 
     def set_policy_json(self, policy_json_str):
         assert isinstance(policy_json_str, str)
@@ -39,7 +38,7 @@ class IamPublish:
 
     def publish_policy(self, policy_name):
         if self.policy_json is None:
-            raise "Policy JSON not set"
+            raise Exception("Policy JSON not set")
         previous_version = None
         current_version = None
         # Check if policy exists
@@ -73,9 +72,29 @@ class IamPublish:
         return dict(PolicyName=policy_name, Arn=policy_arn, CurrentVersion=current_version,
                     PerviousVersion=previous_version)
 
+    def find_role_attachements(self,policy_name):
+        policy_arn = self.get_policy_arn(policy_name)
+        if policy_arn is not None:
+            attached_to_roles = []
+            response = self.iam.list_roles()
+            for role in response['Roles']:
+                role_policies = self.iam.list_attached_role_policies(RoleName=role['RoleName'])
+                if any(d['PolicyName'] == policy_name for d in role_policies['AttachedPolicies']):
+                    attached_to_roles.append(role['RoleName'])
+            if len(attached_to_roles) < 1:
+                return None
+            else:
+                return attached_to_roles
+        else:
+            return None
+
     def delete_all_versions_of_policy(self, policy_name):
         arn = self.get_policy_arn(policy_name)
         if arn is not None:
+            attached_to_roles = self.find_role_attachements(policy_name)
+            if attached_to_roles is not None:
+                for role_name in attached_to_roles:
+                    self.iam.detach_role_policy(RoleName=role_name, PolicyArn=arn)
             # Remove old versions
             response = self.iam.list_policy_versions(PolicyArn=arn)
             for version in response['Versions']:
@@ -125,7 +144,6 @@ class IamPublish:
         for role in response['Roles']:
             if role['RoleName'] == role_name:
                 role_arn = role['Arn']
-                self.role_arn = role['Arn']
                 self.iam.update_assume_role_policy(
                     RoleName=role_name,
                     PolicyDocument=self.role_json)
@@ -133,12 +151,11 @@ class IamPublish:
         if role_arn is None:
             response = self.iam.create_role(RoleName=role_name,
                                             AssumeRolePolicyDocument=self.role_json)
-            self.role_arn = response['Role']['Arn']
             role_arn = response['Role']['Arn']
-        return role_arn
+        return dict(RoleName=role_name, Arn=role_arn)
 
-    def attach_role_policy(self):
+    def attach_policy_to_a_role(self, role_name):
         self.iam.attach_role_policy(
-                RoleName=self.role_name,
+                RoleName=role_name,
                 PolicyArn=self.policy_arn)
 
