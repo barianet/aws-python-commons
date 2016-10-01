@@ -1,6 +1,4 @@
 AWS Commons
 ===========
 
-Provides helpful tools to simplify managing AWS
-
-* iam_managament - simplify publishing new or updates to IAM policies and roles
+Useful libraries and methods for use in AWS Lambda functions
